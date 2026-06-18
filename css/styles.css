@@ -196,6 +196,23 @@ button { font-family: inherit; cursor: pointer; }
 
 .dock-divider { width: 34px; height: 1px; background: var(--stroke); margin: 2px 0; }
 
+.shape-group { display: flex; flex-direction: column; gap: 6px; align-items: center; }
+.shape-btn {
+  width: 40px; height: 34px; border-radius: 9px; border: 1px solid transparent;
+  background: rgba(255,255,255,0.04); color: var(--text-dim); font-size: 18px; line-height: 1;
+}
+.shape-btn.active { background: rgba(108,140,255,0.16); color: var(--text); border-color: rgba(108,140,255,0.4); }
+
+.text-edit-overlay {
+  position: fixed; z-index: 80; margin: 0; padding: 2px 4px;
+  background: rgba(255,255,255,0.96); color: #111;
+  border: 2px solid var(--accent); border-radius: 6px;
+  outline: none; resize: none; overflow: hidden;
+  font-family: -apple-system, system-ui, "Segoe UI", Roboto, sans-serif;
+  line-height: 1.3; box-shadow: 0 8px 30px rgba(0,0,0,0.4);
+  min-width: 40px;
+}
+
 .size-dot {
   width: 40px; height: 30px; border-radius: 9px; border: 1px solid transparent;
   background: transparent; display: grid; place-items: center;
@@ -345,7 +362,7 @@ button { font-family: inherit; cursor: pointer; }
   .dock { flex-direction: row; border-right: none; border-top: 1px solid var(--stroke);
     position: absolute; bottom: 0; left: 0; right: 0; order: 2;
     padding: 8px 10px max(8px, env(safe-area-inset-bottom)); overflow-x: auto; gap: 8px; }
-  .tool-group, .size-group, .color-group { flex-direction: row; }
+  .tool-group, .size-group, .color-group, .shape-group { flex-direction: row; }
   .dock-divider { width: 1px; height: 34px; margin: 0 2px; }
   .ed-body { flex-direction: column; }
   .stage { order: 1; }

@@ -8,6 +8,9 @@ installieren kannst. Keine Anmeldung, keine Kosten, alles bleibt lokal auf deine
 
 - ✍️ **Stifte wie bei GoodNotes**: Füller (druckabhängige Linienstärke), Kugelschreiber,
   Bleistift, Textmarker und Radierer.
+- 📐 **Formen-Werkzeug**: gerade Linie, Pfeil, Rechteck und Ellipse (sauber gezeichnet).
+- 🇹 **Text-Felder**: antippen, tippen — frei platzierbarer, mehrzeiliger Text;
+  zum Bearbeiten erneut antippen, leeren zum Löschen.
 - ✏️ **Apple Pencil / Stylus**: echte Druckerkennung über Pointer Events; flüssige Linien
   dank Coalesced Events.
 - 📒 **Notizbücher & Seiten**: mehrere Notizbücher mit Cover, mehrere Seiten,
@@ -52,6 +55,7 @@ Für den Kamerazugriff (Scanner) muss die Seite über **HTTPS** oder `localhost`
 | Taste | Funktion |
 |------|----------|
 | `F` / `B` / `P` / `H` | Füller / Kugel / Bleistift / Marker |
+| `S` / `T` / `L` | Formen / Text / Lasso |
 | `E` | Radierer · `V` Hand (verschieben) |
 | `Strg/Cmd + Z` | Rückgängig · `Shift` für Wiederholen |
 | `Strg/Cmd + Scroll` | Zoomen |

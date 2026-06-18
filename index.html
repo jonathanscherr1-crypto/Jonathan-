@@ -86,6 +86,12 @@
           <button class="tool" data-tool="highlighter" title="Textmarker">
             <span class="tool-ic">🖍️</span><span class="tool-lbl">Marker</span>
           </button>
+          <button class="tool" data-tool="shapes" title="Formen / Lineal">
+            <span class="tool-ic">📐</span><span class="tool-lbl">Formen</span>
+          </button>
+          <button class="tool" data-tool="text" title="Text einfügen">
+            <span class="tool-ic" style="font-weight:800;font-style:normal">T</span><span class="tool-lbl">Text</span>
+          </button>
           <button class="tool" data-tool="eraser" title="Radierer">
             <span class="tool-ic">🩹</span><span class="tool-lbl">Radierer</span>
           </button>
@@ -98,6 +104,13 @@
         </div>
 
         <div class="dock-divider"></div>
+
+        <div class="shape-group hidden" id="shape-group">
+          <button class="shape-btn active" data-shape="line" title="Linie">／</button>
+          <button class="shape-btn" data-shape="arrow" title="Pfeil">↗</button>
+          <button class="shape-btn" data-shape="rect" title="Rechteck">▭</button>
+          <button class="shape-btn" data-shape="ellipse" title="Ellipse">◯</button>
+        </div>
 
         <div class="size-group" id="size-group">
           <button class="size-dot" data-size="1.5"><i style="width:3px;height:3px"></i></button>

@@ -24,6 +24,8 @@ export class Engine {
     this.tool = "fountain";
     this.color = "#1f2530";
     this.size = 5;
+    this.shapeType = "line";
+    this._editingTextId = null;
 
     this.scale = 1; this.tx = 0; this.ty = 0;
     this.undoStack = []; this.redoStack = [];
@@ -45,6 +47,7 @@ export class Engine {
     this.onChange = () => {};
     this.onHistory = () => {};
     this.onZoom = () => {};
+    this.onTextPlace = () => {};
   }
 
   get page() { return this.notebook.pages[this.pageIndex]; }
@@ -139,9 +142,11 @@ export class Engine {
     const ctx = this.inkCv.getContext("2d");
     ctx.clearRect(0, 0, PAGE_W, PAGE_H);
     for (const s of this.page.strokes) this._renderStroke(ctx, s);
+    drawTexts(ctx, this.page, this._editingTextId);
   }
 
   _renderStroke(ctx, s) {
+    if (s.shape) { this._renderShape(ctx, s); return; }
     const def = TOOLS[s.tool] || TOOLS.ballpoint;
     const pts = s.points;
     if (!pts.length) return;
@@ -184,6 +189,39 @@ export class Engine {
         ctx.beginPath();
         ctx.moveTo(a.x, a.y);
         ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+
+  _renderShape(ctx, s) {
+    const a = s.points[0], b = s.points[1];
+    if (!a || !b) return;
+    ctx.save();
+    ctx.strokeStyle = s.color;
+    ctx.lineWidth = Math.max(1, s.size);
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.beginPath();
+    if (s.shape === "rect") {
+      ctx.rect(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.abs(b.x - a.x), Math.abs(b.y - a.y));
+      ctx.stroke();
+    } else if (s.shape === "ellipse") {
+      const cx = (a.x + b.x) / 2, cy = (a.y + b.y) / 2;
+      ctx.ellipse(cx, cy, Math.abs(b.x - a.x) / 2, Math.abs(b.y - a.y) / 2, 0, 0, 7);
+      ctx.stroke();
+    } else {
+      // line or arrow
+      ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+      if (s.shape === "arrow") {
+        const ang = Math.atan2(b.y - a.y, b.x - a.x);
+        const head = Math.max(14, s.size * 4);
+        ctx.beginPath();
+        ctx.moveTo(b.x, b.y);
+        ctx.lineTo(b.x - head * Math.cos(ang - 0.4), b.y - head * Math.sin(ang - 0.4));
+        ctx.moveTo(b.x, b.y);
+        ctx.lineTo(b.x - head * Math.cos(ang + 0.4), b.y - head * Math.sin(ang + 0.4));
         ctx.stroke();
       }
     }
@@ -246,6 +284,20 @@ export class Engine {
 
     if (this.tool === "lasso") { this._lassoDown(pt); return; }
 
+    if (this.tool === "text") {
+      const hit = this._hitText(pt);
+      this.onTextPlace(pt.x, pt.y, hit);
+      return;
+    }
+
+    if (this.tool === "shapes") {
+      this.drawing = true;
+      this.current = { shape: this.shapeType, tool: "shapes", color: this.color, size: this.size,
+        points: [{ x: pt.x, y: pt.y }, { x: pt.x, y: pt.y }] };
+      this._drawLive();
+      return;
+    }
+
     if (this.tool === "eraser") {
       this.drawing = true; this._erased = [];
       this._erase(pt);
@@ -267,6 +319,13 @@ export class Engine {
     if (this.tool === "lasso") { if (this.drawing || this._movingSel) { e.preventDefault(); this._lassoMove(this._toPage(e)); } return; }
     if (!this.drawing) return;
     e.preventDefault();
+
+    if (this.tool === "shapes") {
+      const pt = this._toPage(e);
+      this.current.points[1] = { x: pt.x, y: pt.y };
+      this._drawLive();
+      return;
+    }
 
     const events = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
     for (const ev of events) {
@@ -475,6 +534,43 @@ export class Engine {
     return false;
   }
 
+  /* ---------------- text items ---------------- */
+  ensureTexts() { if (!this.page.texts) this.page.texts = []; }
+  _hitText(pt) {
+    this.ensureTexts();
+    const pad = 8;
+    for (let i = this.page.texts.length - 1; i >= 0; i--) {
+      const t = this.page.texts[i];
+      const w = t.w || (t.text || "").length * t.size * 0.5;
+      const h = t.h || t.size * 1.3;
+      if (pt.x >= t.x - pad && pt.x <= t.x + w + pad && pt.y >= t.y - pad && pt.y <= t.y + h + pad) return t;
+    }
+    return null;
+  }
+  addTextItem(item) {
+    this.ensureTexts();
+    this.page.texts.push(item);
+    this.undoStack.push({ type: "textadd", item });
+    this.redoStack = [];
+    this._renderInk(); this._commit();
+  }
+  deleteTextItem(item) {
+    this.ensureTexts();
+    const i = this.page.texts.indexOf(item);
+    if (i < 0) return;
+    this.page.texts.splice(i, 1);
+    this.undoStack.push({ type: "textdel", item, index: i });
+    this.redoStack = [];
+    this._renderInk(); this._commit();
+  }
+  commitTextEdit(item, oldText) {
+    if (oldText === item.text) { this._renderInk(); return; }
+    this.undoStack.push({ type: "textedit", item, oldText, newText: item.text });
+    this.redoStack = [];
+    this._renderInk(); this._commit();
+  }
+  setEditingText(id) { this._editingTextId = id; this._renderInk(); }
+
   /* ---------------- history ---------------- */
   undo() {
     const a = this.undoStack.pop();
@@ -487,6 +583,12 @@ export class Engine {
     } else if (a.type === "move") {
       for (const s of a.strokes) for (const p of s.points) { p.x -= a.dx; p.y -= a.dy; }
       this.clearSelection();
+    } else if (a.type === "textadd") {
+      this.ensureTexts(); const i = this.page.texts.indexOf(a.item); if (i >= 0) this.page.texts.splice(i, 1);
+    } else if (a.type === "textdel") {
+      this.ensureTexts(); this.page.texts.splice(a.index, 0, a.item);
+    } else if (a.type === "textedit") {
+      a.item.text = a.oldText;
     }
     this.redoStack.push(a);
     this._renderInk(); this._commit();
@@ -501,6 +603,12 @@ export class Engine {
     } else if (a.type === "move") {
       for (const s of a.strokes) for (const p of s.points) { p.x += a.dx; p.y += a.dy; }
       this.clearSelection();
+    } else if (a.type === "textadd") {
+      this.ensureTexts(); this.page.texts.push(a.item);
+    } else if (a.type === "textdel") {
+      this.ensureTexts(); const i = this.page.texts.indexOf(a.item); if (i >= 0) this.page.texts.splice(i, 1);
+    } else if (a.type === "textedit") {
+      a.item.text = a.newText;
     }
     this.undoStack.push(a);
     this._renderInk(); this._commit();
@@ -565,6 +673,7 @@ export class Engine {
       const finish = () => {
         drawRuling(ctx, page);
         for (const s of page.strokes) this._renderStroke(ctx, s);
+        drawTexts(ctx, page, null);
         resolve(cv);
       };
       if (page.bg) {
@@ -574,6 +683,26 @@ export class Engine {
         im.src = page.bg;
       } else finish();
     });
+  }
+}
+
+function drawTexts(ctx, page, skipId) {
+  const texts = page.texts || [];
+  for (const t of texts) {
+    if (t.id === skipId) continue;
+    ctx.save();
+    ctx.fillStyle = t.color;
+    ctx.textBaseline = "top";
+    ctx.font = `${t.size}px -apple-system, system-ui, "Segoe UI", Roboto, sans-serif`;
+    const lines = (t.text || "").split("\n");
+    const lh = t.size * 1.3;
+    let maxW = 0;
+    lines.forEach((ln, i) => {
+      ctx.fillText(ln, t.x, t.y + i * lh);
+      maxW = Math.max(maxW, ctx.measureText(ln).width);
+    });
+    t.w = maxW; t.h = lines.length * lh;
+    ctx.restore();
   }
 }
 

@@ -164,7 +164,7 @@ function newNotebook(title, paper, coverIdx) {
   };
 }
 function newPage(paper = "blank", bg = null) {
-  return { id: uid(), paper, color: "#ffffff", bg, strokes: [] };
+  return { id: uid(), paper, color: "#ffffff", bg, strokes: [], texts: [] };
 }
 
 /* ============================================================
@@ -186,7 +186,10 @@ function wireEditor() {
 
   $$(".tool").forEach((b) => b.onclick = () => setTool(b.dataset.tool));
   $$(".size-dot").forEach((b) => b.onclick = () => setSize(parseFloat(b.dataset.size)));
+  $$(".shape-btn").forEach((b) => b.onclick = () => setShape(b.dataset.shape));
   $("#custom-color").addEventListener("input", (e) => setColor(e.target.value, true));
+
+  engine.onTextPlace = (x, y, existing) => editText(existing, x, y);
 
   $("#zoom-in").onclick = () => engine.zoomBy(1.2);
   $("#zoom-out").onclick = () => engine.zoomBy(1 / 1.2);
@@ -204,10 +207,10 @@ function wireEditor() {
   // keyboard
   document.addEventListener("keydown", (e) => {
     if (!$("#editor").classList.contains("active")) return;
-    if (e.target.tagName === "INPUT") return;
+    if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
     if ((e.ctrlKey || e.metaKey) && e.key === "z") { e.preventDefault(); e.shiftKey ? engine.redo() : engine.undo(); }
     if ((e.ctrlKey || e.metaKey) && e.key === "y") { e.preventDefault(); engine.redo(); }
-    const map = { f: "fountain", b: "ballpoint", p: "pencil", h: "highlighter", e: "eraser", v: "hand" };
+    const map = { f: "fountain", b: "ballpoint", p: "pencil", h: "highlighter", e: "eraser", v: "hand", l: "lasso", s: "shapes", t: "text" };
     if (map[e.key]) setTool(map[e.key]);
   });
 }
@@ -266,8 +269,60 @@ function setTool(t) {
   if (engine.tool !== t) engine.clearSelection();
   engine.tool = t;
   $$(".tool").forEach((b) => b.classList.toggle("active", b.dataset.tool === t));
+  $("#shape-group").classList.toggle("hidden", t !== "shapes");
   const stage = $("#stage");
-  stage.style.cursor = t === "hand" ? "grab" : t === "eraser" ? "cell" : t === "lasso" ? "default" : "crosshair";
+  stage.style.cursor = t === "hand" ? "grab" : t === "eraser" ? "cell"
+    : t === "text" ? "text" : t === "lasso" ? "default" : "crosshair";
+}
+function setShape(s) {
+  engine.shapeType = s;
+  $$(".shape-btn").forEach((b) => b.classList.toggle("active", b.dataset.shape === s));
+}
+
+/* ---------------- text editing overlay ---------------- */
+function editText(existing, x, y) {
+  const isNew = !existing;
+  const item = existing || { id: uid(), x, y, text: "", size: Math.max(22, Math.round(engine.size * 6)), color: engine.color };
+
+  const ta = document.createElement("textarea");
+  ta.className = "text-edit-overlay";
+  ta.value = item.text || "";
+  ta.rows = 1;
+  document.body.appendChild(ta);
+
+  const place = () => {
+    const r = $("#canvas-wrap").getBoundingClientRect();
+    ta.style.left = (r.left + item.x * engine.scale) + "px";
+    ta.style.top = (r.top + item.y * engine.scale) + "px";
+    ta.style.fontSize = (item.size * engine.scale) + "px";
+    ta.style.color = item.color;
+    ta.style.width = Math.max(60, (item.w || 120) * engine.scale) + "px";
+    ta.style.height = "auto";
+    ta.style.height = ta.scrollHeight + "px";
+  };
+
+  if (!isNew) engine.setEditingText(item.id);
+  place();
+  setTimeout(() => { ta.focus(); ta.select(); }, 0);
+
+  const oldText = item.text || "";
+  ta.addEventListener("input", () => { ta.style.height = "auto"; ta.style.height = ta.scrollHeight + "px"; });
+  ta.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.preventDefault(); ta.blur(); } });
+
+  let done = false;
+  ta.addEventListener("blur", () => {
+    if (done) return; done = true;
+    item.text = ta.value.replace(/\s+$/, "");
+    ta.remove();
+    engine.setEditingText(null);
+    if (isNew) {
+      if (item.text.trim()) engine.addTextItem(item);
+    } else {
+      if (!item.text.trim()) engine.deleteTextItem(item);
+      else engine.commitTextEdit(item, oldText);
+    }
+    saveCurrent();
+  });
 }
 function setSize(s) {
   engine.size = s;
