@@ -38,6 +38,7 @@ async function init() {
   });
   engine.onHistory = updateHistoryButtons;
   engine.onChange = debouncedSave;
+  engine.onZoom = updateZoomLabel;
 
   scanner = new Scanner($("#scanner"));
 
@@ -176,6 +177,8 @@ function wireEditor() {
   $("#btn-redo").onclick = () => engine.redo();
   $("#btn-prev-page").onclick = () => gotoPage(engine.pageIndex - 1);
   $("#btn-next-page").onclick = () => gotoPage(engine.pageIndex + 1);
+  $("#page-indicator").onclick = () => openPagesOverview();
+  $("#page-indicator").style.cursor = "pointer";
   $("#btn-add-page").onclick = () => addPage();
   $("#btn-scan-ed").onclick = () => scanToCurrent();
   $("#btn-export").onclick = () => openExportMenu();
@@ -260,10 +263,11 @@ function updateZoomLabel() { $("#zoom-label").textContent = Math.round(engine.sc
 
 /* tools */
 function setTool(t) {
+  if (engine.tool !== t) engine.clearSelection();
   engine.tool = t;
   $$(".tool").forEach((b) => b.classList.toggle("active", b.dataset.tool === t));
   const stage = $("#stage");
-  stage.style.cursor = t === "hand" ? "grab" : t === "eraser" ? "cell" : "crosshair";
+  stage.style.cursor = t === "hand" ? "grab" : t === "eraser" ? "cell" : t === "lasso" ? "default" : "crosshair";
 }
 function setSize(s) {
   engine.size = s;
@@ -271,21 +275,36 @@ function setSize(s) {
 }
 function setColor(c, fromPicker) {
   engine.color = c;
+  if (fromPicker) addRecentColor(c);
   $$(".swatch").forEach((b) => b.classList.toggle("active", b.dataset.color === c));
-  if (!fromPicker) $("#custom-color").value = toHex(c);
+  $("#custom-color").value = toHex(c);
 }
 function buildColorSwatches() {
   const g = $("#color-group");
   g.innerHTML = "";
-  COLORS.forEach((c) => {
+  const recents = loadRecents();
+  [...COLORS, ...recents].forEach((c) => {
     const b = document.createElement("button");
     b.className = "swatch";
     b.dataset.color = c;
     b.style.background = c;
-    if (c === "#ffffff") b.style.borderColor = "rgba(0,0,0,0.25)";
+    if (c.toLowerCase() === "#ffffff") b.style.borderColor = "rgba(0,0,0,0.25)";
     b.onclick = () => setColor(c);
     g.appendChild(b);
   });
+}
+function loadRecents() {
+  try { return JSON.parse(localStorage.getItem("inkwell-colors") || "[]"); } catch { return []; }
+}
+function addRecentColor(c) {
+  c = c.toLowerCase();
+  if (COLORS.map((x) => x.toLowerCase()).includes(c)) return;
+  let r = loadRecents().filter((x) => x.toLowerCase() !== c);
+  r.unshift(c);
+  r = r.slice(0, 5);
+  localStorage.setItem("inkwell-colors", JSON.stringify(r));
+  buildColorSwatches();
+  $$(".swatch").forEach((b) => b.classList.toggle("active", b.dataset.color === c));
 }
 
 /* ============================================================
@@ -311,6 +330,78 @@ async function scanToNewNotebook() {
   await Storage.put(nb);
   await refreshLibrary();
   openNotebook(nb.id);
+}
+
+/* ============================================================
+   PAGE OVERVIEW
+   ============================================================ */
+async function openPagesOverview() {
+  const body = document.createElement("div");
+  body.innerHTML = `
+    <h3>Seiten</h3>
+    <p>Tippen zum Öffnen · umsortieren oder löschen.</p>
+    <div class="pages-grid" id="pg-grid"></div>
+    <div class="row">
+      <button class="btn ghost" data-close>Schließen</button>
+      <button class="btn primary" id="pg-add">＋ Seite</button>
+    </div>`;
+  const m = modal(body);
+  const grid = body.querySelector("#pg-grid");
+
+  const render = async () => {
+    grid.innerHTML = "";
+    for (let i = 0; i < state.current.pages.length; i++) {
+      const pg = state.current.pages[i];
+      const cv = await engine.renderPageToCanvas(pg);
+      const t = document.createElement("canvas");
+      t.width = 120; t.height = Math.round(120 * PAGE_H / PAGE_W);
+      t.getContext("2d").drawImage(cv, 0, 0, t.width, t.height);
+
+      const cell = document.createElement("div");
+      cell.className = "pg-cell" + (i === engine.pageIndex ? " cur" : "");
+      const thumb = document.createElement("div");
+      thumb.className = "pg-thumb";
+      thumb.appendChild(t);
+      thumb.onclick = () => { m.close(); gotoPage(i); };
+
+      const bar = document.createElement("div");
+      bar.className = "pg-bar";
+      bar.innerHTML = `<span class="pg-num">${i + 1}</span>
+        <span class="pg-acts">
+          <button data-a="up" ${i === 0 ? "disabled" : ""}>◀</button>
+          <button data-a="down" ${i === state.current.pages.length - 1 ? "disabled" : ""}>▶</button>
+          <button data-a="del" class="danger">🗑️</button>
+        </span>`;
+      bar.querySelector('[data-a="up"]').onclick = async () => { swapPages(i, i - 1); await render(); };
+      bar.querySelector('[data-a="down"]').onclick = async () => { swapPages(i, i + 1); await render(); };
+      bar.querySelector('[data-a="del"]').onclick = async () => {
+        if (state.current.pages.length <= 1) { toast("Letzte Seite kann nicht gelöscht werden"); return; }
+        state.current.pages.splice(i, 1);
+        if (engine.pageIndex >= state.current.pages.length) engine.pageIndex = state.current.pages.length - 1;
+        engine.setPage(engine.pageIndex);
+        updatePageIndicator(); engine.fit(); await saveCurrent();
+        await render();
+      };
+
+      cell.appendChild(thumb);
+      cell.appendChild(bar);
+      grid.appendChild(cell);
+    }
+  };
+
+  body.querySelector("#pg-add").onclick = async () => { addPage(); await render(); };
+  await render();
+}
+
+function swapPages(a, b) {
+  if (b < 0 || b >= state.current.pages.length) return;
+  const pages = state.current.pages;
+  const cur = pages[engine.pageIndex];
+  [pages[a], pages[b]] = [pages[b], pages[a]];
+  engine.pageIndex = pages.indexOf(cur);
+  engine.renderAll();
+  updatePageIndicator();
+  saveCurrent();
 }
 
 /* ============================================================

@@ -274,8 +274,12 @@ button { font-family: inherit; cursor: pointer; }
 .shutter:active { transform: scale(.92); }
 
 .scan-review { position: absolute; inset: 0; background: #0b0d12; display: flex; flex-direction: column; }
-#scan-preview { flex: 1; object-fit: contain; width: 100%; min-height: 0; padding: 20px; }
-.scan-review-actions { display: flex; gap: 12px; justify-content: center; padding: 18px max(18px,env(safe-area-inset-bottom)); }
+.scan-edit-top { padding: max(14px, env(safe-area-inset-top)) 16px 8px; text-align: center; }
+.scan-edit-area { flex: 1; min-height: 0; display: grid; place-items: center; padding: 8px 14px; position: relative; }
+#scan-edit { touch-action: none; max-width: 100%; max-height: 100%; border-radius: 8px; box-shadow: 0 10px 40px rgba(0,0,0,0.5); }
+.scan-edit-bottom { display: flex; flex-direction: column; align-items: center; gap: 14px;
+  padding: 14px 16px max(18px,env(safe-area-inset-bottom)); background: linear-gradient(to top, rgba(0,0,0,0.5), transparent); }
+.scan-review-actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
 
 /* ============================================================
    MODALS / TOAST
@@ -311,6 +315,22 @@ button { font-family: inherit; cursor: pointer; }
 .menu-list button:hover { background: rgba(255,255,255,0.06); }
 .menu-list button.danger { color: var(--danger); }
 .menu-list .mic { width: 22px; text-align: center; }
+
+/* Pages overview */
+.pages-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 14px; max-height: 56vh; overflow-y: auto; padding: 4px;
+}
+.pg-cell { border-radius: 10px; overflow: hidden; border: 2px solid var(--stroke); }
+.pg-cell.cur { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(108,140,255,0.25); }
+.pg-thumb { cursor: pointer; background: #fff; display: grid; place-items: center; }
+.pg-thumb canvas { display: block; width: 100%; height: auto; }
+.pg-bar { display: flex; align-items: center; justify-content: space-between; padding: 6px 8px; background: rgba(255,255,255,0.04); }
+.pg-num { font-size: 12px; color: var(--text-dim); font-weight: 700; }
+.pg-acts { display: flex; gap: 4px; }
+.pg-acts button { border: none; background: rgba(255,255,255,0.06); color: var(--text); width: 26px; height: 26px; border-radius: 7px; font-size: 12px; }
+.pg-acts button:disabled { opacity: .3; }
+.pg-acts button.danger { color: var(--danger); }
 
 .toast {
   position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%);

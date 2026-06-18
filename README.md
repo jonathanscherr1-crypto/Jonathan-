@@ -13,11 +13,15 @@ installieren kannst. Keine Anmeldung, keine Kosten, alles bleibt lokal auf deine
 - 📒 **Notizbücher & Seiten**: mehrere Notizbücher mit Cover, mehrere Seiten,
   hinzufügen/duplizieren/löschen, Vorschau-Thumbnails.
 - 📄 **Papierarten**: Blanko, Liniert, Kariert, Punkteraster.
-- 📷 **Dokumentenscanner**: über die Kamera scannen mit Filtern (Farbe, Graustufen,
-  S/W-Dokument). Scan wird als Seite eingefügt.
+- 📷 **Dokumentenscanner** mit **automatischer Kantenerkennung** und
+  **Perspektiv-Korrektur** (Homographie). Ecken sind manuell nachjustierbar.
+  Filter: Farbe, Graustufen, S/W-Dokument (adaptiver Schwellenwert).
 - 🖼️ **Bild-Import** als Seite.
-- 🔍 **Zoom & Verschieben**, Rückgängig/Wiederholen.
-- 🎨 **Farben** inkl. eigener Farbwähler, 5 Linienstärken.
+- ⌖ **Lasso**: Striche auswählen und verschieben (mit Undo/Redo).
+- ✌️ **Zwei-Finger-Zoom & -Verschieben** auf dem Tablet, zusätzlich Maus-Zoom.
+- 🗂️ **Seitenübersicht**: Thumbnails zum Springen, Hinzufügen, Löschen, Umsortieren.
+- 🔍 Zoom & Verschieben, Rückgängig/Wiederholen.
+- 🎨 **Farben** inkl. eigener Farbwähler und zuletzt verwendeten Farben, 5 Linienstärken.
 - ⇪ **Export**: aktuelle Seite als PNG, ganzes Notizbuch als PDF.
 - 📦 **Offline-fähig** dank Service Worker; speichert Notizbücher in IndexedDB.
 

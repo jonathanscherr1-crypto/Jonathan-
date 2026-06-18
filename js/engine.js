@@ -32,10 +32,19 @@ export class Engine {
     this.current = null;
     this.lastPt = null;
 
+    // multi-touch gesture + lasso state
+    this.pointers = new Map();
+    this.gesture = null;
+    this._suppressDraw = false;
+    this.selection = null;
+    this._lassoPts = null;
+    this._movingSel = false;
+
     this._setupCanvases();
     this._bindPointer();
     this.onChange = () => {};
     this.onHistory = () => {};
+    this.onZoom = () => {};
   }
 
   get page() { return this.notebook.pages[this.pageIndex]; }
@@ -63,6 +72,7 @@ export class Engine {
 
   setPage(i) {
     if (i < 0 || i >= this.notebook.pages.length) return;
+    this.clearSelection();
     this.pageIndex = i;
     this.undoStack = []; this.redoStack = [];
     this.renderAll();
@@ -210,12 +220,31 @@ export class Engine {
     return 0.6;
   }
 
+  _touchCount() {
+    let n = 0;
+    for (const p of this.pointers.values()) if (p.type === "touch") n++;
+    return n;
+  }
+
   _down(e) {
+    this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, type: e.pointerType });
+
+    // two fingers -> pan/zoom gesture (works regardless of selected tool)
+    if (e.pointerType !== "pen" && this._touchCount() >= 2) {
+      this._cancelStroke();
+      this._beginGesture();
+      return;
+    }
+    if (this.gesture) return;
+    if (this._suppressDraw) return;
+
     if (this.tool === "hand") { this._panStart(e); return; }
     e.preventDefault();
-    this.liveCv.setPointerCapture(e.pointerId);
+    try { this.liveCv.setPointerCapture(e.pointerId); } catch {}
     const pt = this._toPage(e);
     this.lastPt = pt;
+
+    if (this.tool === "lasso") { this._lassoDown(pt); return; }
 
     if (this.tool === "eraser") {
       this.drawing = true; this._erased = [];
@@ -230,11 +259,15 @@ export class Engine {
   }
 
   _move(e) {
+    if (this.pointers.has(e.pointerId))
+      this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, type: e.pointerType });
+
+    if (this.gesture) { this._gestureMove(); return; }
     if (this.tool === "hand") { this._panMove(e); return; }
+    if (this.tool === "lasso") { if (this.drawing || this._movingSel) { e.preventDefault(); this._lassoMove(this._toPage(e)); } return; }
     if (!this.drawing) return;
     e.preventDefault();
 
-    // use coalesced events for smoothness with stylus
     const events = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
     for (const ev of events) {
       const pt = this._toPage(ev);
@@ -249,7 +282,19 @@ export class Engine {
   }
 
   _up(e) {
+    this.pointers.delete(e.pointerId);
+
+    if (this.gesture) {
+      if (this._touchCount() < 2) { this.gesture = null; this._suppressDraw = true; }
+      if (this.pointers.size === 0) this._suppressDraw = false;
+      return;
+    }
+    if (this.pointers.size === 0) this._suppressDraw = false;
+
     if (this.tool === "hand") { this._panEnd(); return; }
+
+    if (this.tool === "lasso") { this._lassoUp(); return; }
+
     if (!this.drawing) return;
     this.drawing = false;
     this.lastPt = null;
@@ -274,6 +319,136 @@ export class Engine {
       this._commit();
     }
     this.current = null;
+  }
+
+  _cancelStroke() {
+    if (this.drawing && this.current) { this.current = null; this._clearLive(); }
+    this.drawing = false;
+    this.lastPt = null;
+  }
+
+  /* ---------------- two-finger pan/zoom ---------------- */
+  _twoTouches() {
+    const pts = [];
+    for (const p of this.pointers.values()) if (p.type === "touch") pts.push(p);
+    return pts.slice(0, 2);
+  }
+  _beginGesture() {
+    const [a, b] = this._twoTouches();
+    if (!a || !b) return;
+    const r = this.stage.getBoundingClientRect();
+    const mid = { x: (a.x + b.x) / 2 - r.left, y: (a.y + b.y) / 2 - r.top };
+    const dist = Math.hypot(a.x - b.x, a.y - b.y);
+    this.gesture = {
+      dist, scale: this.scale,
+      contentX: (mid.x - this.tx) / this.scale,
+      contentY: (mid.y - this.ty) / this.scale,
+    };
+  }
+  _gestureMove() {
+    const [a, b] = this._twoTouches();
+    if (!a || !b) return;
+    const r = this.stage.getBoundingClientRect();
+    const mid = { x: (a.x + b.x) / 2 - r.left, y: (a.y + b.y) / 2 - r.top };
+    const dist = Math.hypot(a.x - b.x, a.y - b.y);
+    const g = this.gesture;
+    this.scale = Math.max(0.2, Math.min(6, g.scale * (dist / g.dist)));
+    this.tx = mid.x - g.contentX * this.scale;
+    this.ty = mid.y - g.contentY * this.scale;
+    this._apply();
+  }
+
+  /* ---------------- lasso select & move ---------------- */
+  _lassoDown(pt) {
+    if (this.selection && this._inBBox(pt, this.selection.bbox, 12 / this.scale)) {
+      this._movingSel = true;
+      this._moveLast = pt;
+      this._moveAccum = { dx: 0, dy: 0 };
+    } else {
+      this.selection = null;
+      this._lassoPts = [pt];
+      this.drawing = true;
+      this._clearLive();
+    }
+  }
+  _lassoMove(pt) {
+    if (this._movingSel) {
+      const dx = pt.x - this._moveLast.x, dy = pt.y - this._moveLast.y;
+      for (const s of this.selection.strokes)
+        for (const p of s.points) { p.x += dx; p.y += dy; }
+      this.selection.bbox.x += dx; this.selection.bbox.y += dy;
+      this._moveAccum.dx += dx; this._moveAccum.dy += dy;
+      this._moveLast = pt;
+      this._renderInk();
+      this._drawSelOverlay();
+    } else if (this.drawing) {
+      this._lassoPts.push(pt);
+      this._drawLassoPath();
+    }
+  }
+  _lassoUp() {
+    if (this._movingSel) {
+      this._movingSel = false;
+      if (this._moveAccum && (this._moveAccum.dx || this._moveAccum.dy)) {
+        this.undoStack.push({ type: "move", strokes: this.selection.strokes.slice(), dx: this._moveAccum.dx, dy: this._moveAccum.dy });
+        this.redoStack = [];
+        this._commit();
+      }
+      this._drawSelOverlay();
+      return;
+    }
+    if (!this.drawing) return;
+    this.drawing = false;
+    const poly = this._lassoPts || [];
+    this._lassoPts = null;
+    if (poly.length < 3) { this._clearLive(); return; }
+    const sel = [];
+    for (const s of this.page.strokes) {
+      let inside = 0;
+      for (const p of s.points) if (pointInPoly(p, poly)) inside++;
+      if (inside > s.points.length * 0.5) sel.push(s);
+    }
+    if (!sel.length) { this.selection = null; this._clearLive(); return; }
+    this.selection = { strokes: sel, bbox: strokesBBox(sel) };
+    this._drawSelOverlay();
+  }
+  _inBBox(pt, b, pad = 0) {
+    return pt.x >= b.x - pad && pt.x <= b.x + b.w + pad && pt.y >= b.y - pad && pt.y <= b.y + b.h + pad;
+  }
+  _drawLassoPath() {
+    const ctx = this.liveCv.getContext("2d");
+    ctx.clearRect(0, 0, PAGE_W, PAGE_H);
+    ctx.save();
+    ctx.setLineDash([8, 6]);
+    ctx.lineWidth = 1.5 / this.scale;
+    ctx.strokeStyle = "#6c8cff";
+    ctx.fillStyle = "rgba(108,140,255,0.08)";
+    ctx.beginPath();
+    ctx.moveTo(this._lassoPts[0].x, this._lassoPts[0].y);
+    for (const p of this._lassoPts) ctx.lineTo(p.x, p.y);
+    ctx.closePath();
+    ctx.fill(); ctx.stroke();
+    ctx.restore();
+  }
+  _drawSelOverlay() {
+    const ctx = this.liveCv.getContext("2d");
+    ctx.clearRect(0, 0, PAGE_W, PAGE_H);
+    if (!this.selection) return;
+    const b = this.selection.bbox;
+    ctx.save();
+    ctx.setLineDash([8, 6]);
+    ctx.lineWidth = 1.5 / this.scale;
+    ctx.strokeStyle = "#6c8cff";
+    ctx.fillStyle = "rgba(108,140,255,0.06)";
+    const pad = 8 / this.scale;
+    ctx.beginPath();
+    ctx.rect(b.x - pad, b.y - pad, b.w + 2 * pad, b.h + 2 * pad);
+    ctx.fill(); ctx.stroke();
+    ctx.restore();
+  }
+  clearSelection() {
+    this.selection = null; this._lassoPts = null; this._movingSel = false;
+    this._clearLive();
   }
 
   _drawLive() {
@@ -309,6 +484,9 @@ export class Engine {
       if (i >= 0) this.page.strokes.splice(i, 1);
     } else if (a.type === "erase") {
       for (const it of a.items.slice().reverse()) this.page.strokes.splice(it.index, 0, it.stroke);
+    } else if (a.type === "move") {
+      for (const s of a.strokes) for (const p of s.points) { p.x -= a.dx; p.y -= a.dy; }
+      this.clearSelection();
     }
     this.redoStack.push(a);
     this._renderInk(); this._commit();
@@ -320,6 +498,9 @@ export class Engine {
     else if (a.type === "erase") for (const it of a.items) {
       const idx = this.page.strokes.indexOf(it.stroke);
       if (idx >= 0) this.page.strokes.splice(idx, 1);
+    } else if (a.type === "move") {
+      for (const s of a.strokes) for (const p of s.points) { p.x += a.dx; p.y += a.dy; }
+      this.clearSelection();
     }
     this.undoStack.push(a);
     this._renderInk(); this._commit();
@@ -340,6 +521,7 @@ export class Engine {
   /* ---------------- zoom / pan ---------------- */
   _apply() {
     this.wrap.style.transform = `translate(${this.tx}px, ${this.ty}px) scale(${this.scale})`;
+    this.onZoom();
   }
   fit() {
     const r = this.stage.getBoundingClientRect();
@@ -396,6 +578,27 @@ export class Engine {
 }
 
 function line(ctx, x1, y1, x2, y2) { ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); }
+
+function pointInPoly(pt, poly) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const xi = poly[i].x, yi = poly[i].y, xj = poly[j].x, yj = poly[j].y;
+    const intersect = (yi > pt.y) !== (yj > pt.y) &&
+      pt.x < ((xj - xi) * (pt.y - yi)) / (yj - yi + 1e-9) + xi;
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+function strokesBBox(strokes) {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const s of strokes)
+    for (const p of s.points) {
+      if (p.x < minX) minX = p.x; if (p.y < minY) minY = p.y;
+      if (p.x > maxX) maxX = p.x; if (p.y > maxY) maxY = p.y;
+    }
+  return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+}
 
 function drawRuling(ctx, p) {
   const ruling = p.paper || "blank";

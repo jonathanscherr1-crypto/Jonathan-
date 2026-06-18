@@ -148,20 +148,28 @@
       </div>
       <div class="scan-frame"></div>
       <div class="scan-bottom">
+        <button id="scan-shoot" class="shutter"></button>
+      </div>
+    </div>
+    <!-- Review / edit screen after capture -->
+    <div id="scan-review" class="scan-review hidden">
+      <div class="scan-edit-top">
+        <span class="scan-hint">Ecken anpassen — Ränder werden automatisch erkannt</span>
+      </div>
+      <div id="scan-edit-area" class="scan-edit-area">
+        <canvas id="scan-edit"></canvas>
+      </div>
+      <div class="scan-edit-bottom">
         <div class="filter-seg" id="filter-seg">
           <button data-filter="color" class="active">Farbe</button>
           <button data-filter="gray">Graustufen</button>
           <button data-filter="bw">S/W Dokument</button>
         </div>
-        <button id="scan-shoot" class="shutter"></button>
-      </div>
-    </div>
-    <!-- Review screen after capture -->
-    <div id="scan-review" class="scan-review hidden">
-      <img id="scan-preview" alt="Scan-Vorschau" />
-      <div class="scan-review-actions">
-        <button id="scan-retake" class="btn ghost light">Neu</button>
-        <button id="scan-use" class="btn primary">Verwenden</button>
+        <div class="scan-review-actions">
+          <button id="scan-retake" class="btn ghost light">Neu</button>
+          <button id="scan-auto" class="btn ghost light">Auto-Ecken</button>
+          <button id="scan-use" class="btn primary">Begradigen & verwenden</button>
+        </div>
       </div>
     </div>
   </div>
